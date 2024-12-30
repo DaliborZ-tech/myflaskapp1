@@ -1,0 +1,64 @@
+<!-- templates/superuser.html -->
+{% extends "base.html" %}
+{% block content %}
+<h2>SUPERUSER sekce</h2>
+
+{% if error %}
+<p class="error">{{ error }}</p>
+{% endif %}
+
+<h3>Přidat nového uživatele</h3>
+<form method="POST" action="{{ url_for('superuser') }}">
+    <label for="new_username">Uživatelské jméno</label>
+    <input type="text" name="new_username" required>
+
+    <label for="new_password">Heslo</label>
+    <input type="password" name="new_password" required>
+
+    <button type="submit" class="centered">Vytvořit</button>
+</form>
+
+<hr>
+<h3>Seznam uživatelů</h3>
+<table>
+    <tr>
+        <th>ID</th>
+        <th>Uživatel</th>
+        <th>Superuser</th>
+        <th>Hashované heslo</th>
+        <th>Akce</th>
+    </tr>
+    {% for u in users %}
+    <tr>
+        <td>{{ u.id }}</td>
+        <td>{{ u.username }}</td>
+        <td>{{ 'Ano' if u.is_superuser else 'Ne' }}</td>
+        <td>
+            <span class="password-hash" style="display:none;">{{ u.password_hash }}</span>
+            <button onclick="toggleHash(this)" class="centered">Zobrazit</button>
+        </td>
+        <td>
+            {% if not u.is_superuser %}
+            <a href="{{ url_for('delete_user', user_id=u.id) }}"
+               onclick="return confirm('Opravdu smazat uživatele?');">
+               Smazat
+            </a> |
+            {% endif %}
+            <a href="{{ url_for('change_password', user_id=u.id) }}">Změnit heslo</a>
+        </td>
+    </tr>
+    {% endfor %}
+</table>
+<script>
+function toggleHash(btn) {
+    const span = btn.parentNode.querySelector('.password-hash');
+    if (span.style.display === 'none') {
+        span.style.display = 'inline';
+        btn.textContent = 'Skrýt';
+    } else {
+        span.style.display = 'none';
+        btn.textContent = 'Zobrazit';
+    }
+}
+</script>
+{% endblock %}
