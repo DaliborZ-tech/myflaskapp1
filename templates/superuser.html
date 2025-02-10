@@ -25,7 +25,6 @@
         <th>ID</th>
         <th>Uživatel</th>
         <th>Superuser</th>
-        <th>Hashované heslo</th>
         <th>Akce</th>
     </tr>
     {% for u in users %}
@@ -33,10 +32,6 @@
         <td>{{ u.id }}</td>
         <td>{{ u.username }}</td>
         <td>{{ 'Ano' if u.is_superuser else 'Ne' }}</td>
-        <td>
-            <span class="password-hash" style="display:none;">{{ u.password_hash }}</span>
-            <button onclick="toggleHash(this)" class="centered">Zobrazit</button>
-        </td>
         <td>
             {% if not u.is_superuser %}
             <a href="{{ url_for('delete_user', user_id=u.id) }}"
@@ -49,16 +44,16 @@
     </tr>
     {% endfor %}
 </table>
-<script>
-function toggleHash(btn) {
-    const span = btn.parentNode.querySelector('.password-hash');
-    if (span.style.display === 'none') {
-        span.style.display = 'inline';
-        btn.textContent = 'Skrýt';
-    } else {
-        span.style.display = 'none';
-        btn.textContent = 'Zobrazit';
-    }
-}
-</script>
+<form action="{{ url_for('upload_orders') }}" method="post" enctype="multipart/form-data">
+    <input type="file" name="file" accept=".csv" required>
+    <button type="submit">Nahrát CSV</button>
+</form>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+        {% for category, message in messages %}
+            <div class="alert alert-{{ category }}">{{ message }}</div>
+        {% endfor %}
+    {% endif %}
+{% endwith %}
 {% endblock %}

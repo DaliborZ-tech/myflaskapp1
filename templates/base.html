@@ -3,19 +3,26 @@
 <html lang="cs">
 <head>
     <meta charset="UTF-8" />
-    <title>Flask WebUsers</title>
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600&display=swap">
+    <title>Montáže - AMS</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Open+Sans:ital,wght@0,300..800;1,300..800&family=Oswald:wght@200..700&family=Roboto:wght@400;900&display=swap" rel="stylesheet">
     <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
 
 <nav>
+    <a href="{{ url_for('index') }}" class="logo">
+    <img src="\static\logo.png" alt="Logo Rhenus" class="logo"/>
+  </a>
     <!-- Jednoduchá navigace -->
     <a href="{{ url_for('index') }}">Domů</a>
     {% if session.user_id %}
         <a href="{{ url_for('logout') }}">Odhlásit</a>
         {% endif %}
 </nav>
+
+<div class="gold-line"></div>
 
 <div class="container">
     {% block content %}{% endblock %}

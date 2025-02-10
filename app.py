@@ -1,16 +1,172 @@
 # app.py
-from flask import Flask, render_template, request, redirect, url_for, session
+import os
+import pandas as pd
+from flask import Flask, render_template, request, redirect, url_for, session, flash
+from werkzeug.utils import secure_filename
 from werkzeug.security import generate_password_hash, check_password_hash
-from models import db, User
+from models import db, User, Order, CustomerContact
+from flask_migrate import Migrate
 import config
+import chardet
+
 
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = config.SQLALCHEMY_DATABASE_URI
 app.config[
     'SQLALCHEMY_TRACK_MODIFICATIONS'] = config.SQLALCHEMY_TRACK_MODIFICATIONS
 app.config['SECRET_KEY'] = config.SECRET_KEY
+app.config['UPLOAD_FOLDER'] = "uploads"
 
 db.init_app(app)
+migrate = Migrate(app, db)
+
+ALLOWED_EXTENSIONS = {'csv', 'xlsx'}
+
+UPLOAD_FOLDER = 'uploads'
+if not os.path.exists(UPLOAD_FOLDER):
+    os.makedirs(UPLOAD_FOLDER)
+
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+def detect_encoding(file_path):
+    """Detekce kódování CSV souboru"""
+    with open(file_path, 'rb') as f:
+        result = chardet.detect(f.read())
+    return result['encoding']
+
+def vlozeni_kontaktu(shipment_numbers):
+    """Simulace vkládání kontaktů (může se rozšířit)"""
+    for shipment in shipment_numbers:
+        contact = CustomerContact(
+            customer=shipment,
+            address="Dummy Address",
+            phone_number="123456789",
+            email="example@email.com"
+        )
+        db.session.add(contact)
+    db.session.commit()
+
+
+@app.route('/upload_orders', methods=['GET', 'POST'])
+def upload_orders():
+    """Nahrání a zpracování CSV souboru se zakázkami"""
+    if request.method == 'POST':
+        file = request.files['file']
+        if not file:
+            flash("Nebyl vybrán žádný soubor.", "danger")
+            return redirect(url_for('upload_orders'))
+
+        filename = secure_filename(file.filename)
+        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        file.save(filepath)
+
+        # Detekce kódování
+        encoding = detect_encoding(filepath)
+
+        try:
+            data = pd.read_csv(filepath, encoding=encoding, sep=';', engine='python', on_bad_lines='skip')
+        except Exception as e:
+            flash(f"Chyba při načítání souboru: {e}", "danger")
+            return redirect(url_for('upload_orders'))
+
+        # 📌 ROZHODOVÁNÍ O ZAŘAZENÍ ZAKÁZKY
+        orders = []
+        confirmation_orders = []  # Seznam zakázek k potvrzení
+
+        for _, row in data.iterrows():
+            try:
+                order_number = str(row['Císlo zakázky ']).strip().replace('=',
+                                                                          '').replace(
+                    '"', '')
+
+                print(f"Zpracováváme zakázku: {order_number}")
+
+                created_date = (
+                    pd.to_datetime(row['Erfassungstermin'], format='%d.%m.%Y',
+                                   dayfirst=True).date()
+                    if not pd.isna(row['Erfassungstermin']) else None
+                )
+                delivery_date = (
+                    pd.to_datetime(row['Avizovaný termín'], format='%d.%m.%Y',
+                                   dayfirst=True).date()
+                    if not pd.isna(row['Avizovaný termín']) else None
+                )
+
+                order_data = {
+                    'client': row['Mandant'],
+                    'order_number': order_number,
+                    'customer_name': row['Príjmení'],
+                    'city': row['PSC'],
+                    'created': created_date,
+                    'delivery': delivery_date
+                }
+
+                # ✅ Automaticky přidáme pokud `Montáz` je 1
+                if row['Montáz'] == 1:
+                    print(f"✅ Automaticky přidáváme zakázku: {order_number}")
+                    orders.append(Order(**order_data))
+
+                # ❓ Pokud zakázka končí `R` nebo `R"` → přidáme na seznam k potvrzení
+                elif order_number.endswith('R') or order_number.endswith('R"'):
+                    print(f"⚠ Zakázka {order_number} by měla jít k potvrzení.")
+                    confirmation_orders.append(order_data)
+
+            except KeyError as e:
+                print(f"❌ Chybějící sloupec: {e}")
+            except Exception as e:
+                print(f"❌ Chyba při zpracování řádku: {e}")
+
+        print(f"📌 Celkem {len(confirmation_orders)} zakázek jde k potvrzení.")
+
+        # 📌 Uložíme automatické zakázky
+        if orders:
+            try:
+                db.session.add_all(orders)
+                db.session.commit()
+                flash(f"Do databáze bylo přidáno {len(orders)} zakázek.", "success")
+            except Exception as e:
+                db.session.rollback()
+                flash(f"Chyba při ukládání do databáze: {e}", "danger")
+            finally:
+                db.session.close()
+
+        # 📌 Pokud jsou zakázky k potvrzení, zobrazíme je na nové stránce
+        if confirmation_orders:
+            session['confirmation_orders'] = confirmation_orders
+            return redirect(url_for('confirm_orders'))
+
+        return redirect(url_for('upload_orders'))
+
+    return render_template('upload_orders.html')
+
+
+@app.route('/confirm_orders', methods=['GET', 'POST'])
+def confirm_orders():
+    confirmation_orders = session.get('confirmation_orders', [])
+
+    print(f"Načítáme {len(confirmation_orders)} zakázek k potvrzení")  # DEBUG
+
+    if request.method == 'POST':
+        selected_orders = [order.strip().replace('=', '').replace('"', '') for order in request.form.getlist('selected_orders')]
+
+        if selected_orders:
+            orders_to_add = [Order(**order) for order in confirmation_orders if
+                             order['order_number'] in selected_orders]
+
+            if orders_to_add:
+                try:
+                    db.session.add_all(orders_to_add)
+                    db.session.commit()
+                    flash(f"Přidáno {len(orders_to_add)} zakázek.", "success")
+                except Exception as e:
+                    db.session.rollback()
+                    flash(f"Chyba při ukládání do databáze: {e}", "danger")
+
+        session.pop('confirmation_orders', None)
+        return redirect(url_for('upload_orders'))
+
+    return render_template('confirm_orders.html', orders=confirmation_orders)
 
 
 @app.before_first_request
@@ -195,4 +351,4 @@ def init_db():
 
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run()

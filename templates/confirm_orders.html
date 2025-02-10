@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block content %}
+    {% if orders %}
+    <form method="POST">
+        <ul>
+            {% for order in orders %}
+                <li>
+                    <input type="checkbox" name="selected_orders" value="{{ order.order_number }}">
+                    {{ order.order_number }} - {{ order.customer_name }} - {{ order.city }}
+                </li>
+            {% endfor %}
+        </ul>
+        <button type="submit">Potvrdit vybrané zakázky</button>
+    </form>
+{% else %}
+    <p>Žádné zakázky k potvrzení.</p>
+{% endif %}
+
+{% endblock %}
