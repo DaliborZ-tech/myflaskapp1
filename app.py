@@ -79,19 +79,25 @@ def upload_orders():
                 order_number = str(row['Císlo zakázky ']).strip().replace('=',
                                                                           '').replace(
                     '"', '')
+                note = row.get('Poznámka mandanta',
+                               '')  # ✅ Získání poznámky mandanta
 
                 print(f"Zpracováváme zakázku: {order_number}")
 
-                created_date = (
-                    pd.to_datetime(row['Erfassungstermin'], format='%d.%m.%Y',
-                                   dayfirst=True).date()
-                    if not pd.isna(row['Erfassungstermin']) else None
-                )
-                delivery_date = (
-                    pd.to_datetime(row['Avizovaný termín'], format='%d.%m.%Y',
-                                   dayfirst=True).date()
-                    if not pd.isna(row['Avizovaný termín']) else None
-                )
+                created_date = None
+                delivery_date = None
+
+                if not pd.isna(row['Erfassungstermin']):
+                    created_date = pd.to_datetime(row['Erfassungstermin'],
+                                                  format='%d.%m.%Y',
+                                                  dayfirst=True).strftime(
+                        '%Y-%m-%d')
+
+                if not pd.isna(row['Avizovaný termín']):
+                    delivery_date = pd.to_datetime(row['Avizovaný termín'],
+                                                   format='%d.%m.%Y',
+                                                   dayfirst=True).strftime(
+                        '%Y-%m-%d')
 
                 order_data = {
                     'client': row['Mandant'],
@@ -99,17 +105,14 @@ def upload_orders():
                     'customer_name': row['Príjmení'],
                     'city': row['PSC'],
                     'created': created_date,
-                    'delivery': delivery_date
+                    'delivery': delivery_date,
+                    'note': note  # ✅ Přidáme poznámku mandanta
                 }
 
-                # ✅ Automaticky přidáme pokud `Montáz` je 1
-                if row['Montáz'] == 1:
-                    print(f"✅ Automaticky přidáváme zakázku: {order_number}")
-                    orders.append(Order(**order_data))
-
-                # ❓ Pokud zakázka končí `R` nebo `R"` → přidáme na seznam k potvrzení
-                elif order_number.endswith('R') or order_number.endswith('R"'):
-                    print(f"⚠ Zakázka {order_number} by měla jít k potvrzení.")
+                # ❓ Pokud zakázka končí `R` nebo `R"`, přidáme na seznam k potvrzení
+                if order_number.endswith('R') or order_number.endswith('R"'):
+                    print(
+                        f"⚠ Zakázka {order_number} by měla jít k potvrzení s poznámkou: {note}")
                     confirmation_orders.append(order_data)
 
             except KeyError as e:
@@ -117,7 +120,10 @@ def upload_orders():
             except Exception as e:
                 print(f"❌ Chyba při zpracování řádku: {e}")
 
-        print(f"📌 Celkem {len(confirmation_orders)} zakázek jde k potvrzení.")
+        # 📌 Uložíme zakázky k potvrzení do session
+        if confirmation_orders:
+            session['confirmation_orders'] = confirmation_orders
+            return redirect(url_for('confirm_orders'))
 
         # 📌 Uložíme automatické zakázky
         if orders:
@@ -131,12 +137,7 @@ def upload_orders():
             finally:
                 db.session.close()
 
-        # 📌 Pokud jsou zakázky k potvrzení, zobrazíme je na nové stránce
-        if confirmation_orders:
-            session['confirmation_orders'] = confirmation_orders
-            return redirect(url_for('confirm_orders'))
-
-        return redirect(url_for('upload_orders'))
+        return redirect(url_for('superuser'))  # ✅ Po nahrání přesměrujeme na superuser panel
 
     return render_template('upload_orders.html')
 
@@ -151,8 +152,14 @@ def confirm_orders():
         selected_orders = [order.strip().replace('=', '').replace('"', '') for order in request.form.getlist('selected_orders')]
 
         if selected_orders:
-            orders_to_add = [Order(**order) for order in confirmation_orders if
-                             order['order_number'] in selected_orders]
+            orders_to_add = []
+            for order in confirmation_orders:
+                if order['order_number'] in selected_orders:
+                    order['created'] = order['created'] if order['created'] else None  # ✅ Upravíme formát data
+                    order['delivery'] = order['delivery'] if order['delivery'] else None
+                    clean_order = {key: value for key, value in order.items()
+                                   if key != 'note'}
+                    orders_to_add.append(Order(**clean_order))
 
             if orders_to_add:
                 try:
@@ -164,7 +171,7 @@ def confirm_orders():
                     flash(f"Chyba při ukládání do databáze: {e}", "danger")
 
         session.pop('confirmation_orders', None)
-        return redirect(url_for('upload_orders'))
+        return redirect(url_for('superuser'))  # ✅ Po potvrzení přesměrujeme na superuser panel
 
     return render_template('confirm_orders.html', orders=confirmation_orders)
 

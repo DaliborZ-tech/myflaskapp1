@@ -6,7 +6,7 @@
             {% for order in orders %}
                 <li>
                     <input type="checkbox" name="selected_orders" value="{{ order.order_number }}">
-                    {{ order.order_number }} - {{ order.customer_name }} - {{ order.city }}
+                    {{ order.order_number }} - {{ order.note }}
                 </li>
             {% endfor %}
         </ul>
